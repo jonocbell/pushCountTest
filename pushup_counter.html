@@ -267,7 +267,6 @@
             <button id="startBtn">Start Camera</button>
             <button id="switchCameraBtn" style="display: none;">Switch Camera 🔄</button>
             <button id="resetBtn">Reset Counter</button>
-            <button id="calibrateBtn">Calibrate</button>
         </div>
         
         <div class="stats">
@@ -290,18 +289,18 @@
         </div>
         
         <div class="status" id="status">
-            Click "Start Camera" to begin
+            Click "Start Camera" to begin automatic push-up detection
         </div>
         
         <div class="instructions">
             <h3>📋 Instructions:</h3>
             <ul>
-                <li><strong>Camera:</strong> Starts with front camera so you can see the count. Switch to rear camera if needed</li>
-                <li><strong>Position yourself:</strong> Make sure your whole body is visible in the camera</li>
-                <li><strong>Calibrate:</strong> Click "Calibrate" while in the starting push-up position (plank)</li>
-                <li><strong>Perform push-ups:</strong> Do full push-ups with proper form</li>
-                <li><strong>Good lighting:</strong> Ensure you have adequate lighting for better detection</li>
-                <li><strong>Steady device:</strong> Keep your device stable for best results</li>
+                <li><strong>Start Camera:</strong> App automatically detects your position - no calibration needed!</li>
+                <li><strong>Position yourself:</strong> Make sure your upper body and arms are visible in the camera</li>
+                <li><strong>Get in position:</strong> Start in plank position and the app will learn your baseline automatically</li>
+                <li><strong>Visual tracking:</strong> Green box and colored dots show the app is tracking your body</li>
+                <li><strong>Perform push-ups:</strong> Do full push-ups - the app counts automatically as you go down and up</li>
+                <li><strong>Camera options:</strong> Starts with front camera to see the count, switch to rear if preferred</li>
             </ul>
         </div>
     </div>
@@ -320,12 +319,15 @@
                 // Push-up detection variables
                 this.pushupCount = 0;
                 this.lastPosition = 'neutral';
-                this.isCalibrated = false;
+                this.isInPushUp = false;
                 this.baselineY = null;
-                this.threshold = 50; // pixels
-                this.minConfidence = 0.5;
+                this.adaptiveBaseline = [];
+                this.baselineHistory = 10; // frames to average for baseline
+                this.threshold = 40; // pixels
+                this.minConfidence = 0.3; // Lower for better detection
                 this.positionHistory = [];
-                this.historySize = 5;
+                this.historySize = 3; // Faster response
+                this.frameCount = 0;
                 
                 this.setupEventListeners();
                 this.updateDisplay();
@@ -342,10 +344,6 @@
                 
                 document.getElementById('resetBtn').addEventListener('click', () => {
                     this.resetCounter();
-                });
-                
-                document.getElementById('calibrateBtn').addEventListener('click', () => {
-                    this.calibrate();
                 });
             }
             
@@ -475,16 +473,18 @@
                     this.currentStream = stream;
                     this.video.srcObject = stream;
                     
-                    // Reset calibration when switching cameras
-                    this.isCalibrated = false;
+                    // Reset detection when switching cameras
                     this.baselineY = null;
+                    this.adaptiveBaseline = [];
                     this.positionHistory = [];
                     this.lastPosition = 'neutral';
+                    this.isInPushUp = false;
+                    this.frameCount = 0;
                     
                                          this.video.addEventListener('loadeddata', () => {
                          this.setupCanvas();
                          this.updateVideoMirror();
-                         this.updateStatus('Camera switched! Please calibrate again.');
+                         this.updateStatus('Camera switched! Learning your position...');
                      });
                     
                 } catch (error) {
@@ -523,7 +523,7 @@
                         multiplier: 0.5 // Lighter model for better mobile performance
                     });
                     
-                    this.updateStatus('Model loaded! Ready to detect poses.');
+                    this.updateStatus('🚀 Ready! Position yourself and start your push-ups!');
                     this.startDetection();
                     
                 } catch (error) {
@@ -568,87 +568,180 @@
                 const scaleX = this.canvas.width / this.video.videoWidth;
                 const scaleY = this.canvas.height / this.video.videoHeight;
                 
-                // Draw keypoints
+                // Get key body parts for visual tracking
+                const nose = pose.keypoints.find(kp => kp.part === 'nose');
+                const leftShoulder = pose.keypoints.find(kp => kp.part === 'leftShoulder');
+                const rightShoulder = pose.keypoints.find(kp => kp.part === 'rightShoulder');
+                const leftElbow = pose.keypoints.find(kp => kp.part === 'leftElbow');
+                const rightElbow = pose.keypoints.find(kp => kp.part === 'rightElbow');
+                const leftWrist = pose.keypoints.find(kp => kp.part === 'leftWrist');
+                const rightWrist = pose.keypoints.find(kp => kp.part === 'rightWrist');
+                const leftHip = pose.keypoints.find(kp => kp.part === 'leftHip');
+                const rightHip = pose.keypoints.find(kp => kp.part === 'rightHip');
+                
+                // Draw body tracking box
+                if (leftShoulder && rightShoulder && leftHip && rightHip && 
+                    leftShoulder.score >= minConfidence && rightShoulder.score >= minConfidence &&
+                    leftHip.score >= minConfidence && rightHip.score >= minConfidence) {
+                    
+                    const centerX = ((leftShoulder.position.x + rightShoulder.position.x) / 2) * scaleX;
+                    const centerY = ((leftShoulder.position.y + rightShoulder.position.y) / 2) * scaleY;
+                    const bodyWidth = Math.abs(rightShoulder.position.x - leftShoulder.position.x) * scaleX * 1.5;
+                    const bodyHeight = Math.abs(((leftHip.position.y + rightHip.position.y) / 2) - ((leftShoulder.position.y + rightShoulder.position.y) / 2)) * scaleY * 1.2;
+                    
+                    // Draw body tracking rectangle
+                    this.ctx.strokeStyle = '#00ff00';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.strokeRect(centerX - bodyWidth/2, centerY - bodyHeight/2, bodyWidth, bodyHeight);
+                    
+                    // Draw center point
+                    this.ctx.fillStyle = '#ff0000';
+                    this.ctx.beginPath();
+                    this.ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+                    this.ctx.fill();
+                }
+                
+                // Draw key points with different colors for different body parts
+                const keyPointColors = {
+                    'nose': '#ff0000',
+                    'leftShoulder': '#00ff00',
+                    'rightShoulder': '#00ff00',
+                    'leftElbow': '#ffff00',
+                    'rightElbow': '#ffff00',
+                    'leftWrist': '#ff00ff',
+                    'rightWrist': '#ff00ff',
+                    'leftHip': '#00ffff',
+                    'rightHip': '#00ffff'
+                };
+                
                 pose.keypoints.forEach(keypoint => {
-                    if (keypoint.score >= minConfidence) {
+                    if (keypoint.score >= minConfidence && keyPointColors[keypoint.part]) {
                         this.ctx.beginPath();
                         this.ctx.arc(
                             keypoint.position.x * scaleX, 
                             keypoint.position.y * scaleY, 
-                            4, 0, 2 * Math.PI
+                            6, 0, 2 * Math.PI
                         );
-                        this.ctx.fillStyle = '#00ff00';
+                        this.ctx.fillStyle = keyPointColors[keypoint.part];
                         this.ctx.fill();
+                        this.ctx.strokeStyle = '#ffffff';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.stroke();
                     }
                 });
                 
-                // Draw skeleton
-                const adjacentKeyPoints = posenet.getAdjacentKeyPoints(pose.keypoints, minConfidence);
-                adjacentKeyPoints.forEach(keypoint => {
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(
-                        keypoint[0].position.x * scaleX, 
-                        keypoint[0].position.y * scaleY
-                    );
-                    this.ctx.lineTo(
-                        keypoint[1].position.x * scaleX, 
-                        keypoint[1].position.y * scaleY
-                    );
-                    this.ctx.strokeStyle = '#00ff00';
-                    this.ctx.lineWidth = 2;
-                    this.ctx.stroke();
+                // Draw skeleton connections
+                const connections = [
+                    ['leftShoulder', 'rightShoulder'],
+                    ['leftShoulder', 'leftElbow'],
+                    ['rightShoulder', 'rightElbow'],
+                    ['leftElbow', 'leftWrist'],
+                    ['rightElbow', 'rightWrist'],
+                    ['leftShoulder', 'leftHip'],
+                    ['rightShoulder', 'rightHip'],
+                    ['leftHip', 'rightHip']
+                ];
+                
+                connections.forEach(([part1, part2]) => {
+                    const point1 = pose.keypoints.find(kp => kp.part === part1);
+                    const point2 = pose.keypoints.find(kp => kp.part === part2);
+                    
+                    if (point1 && point2 && point1.score >= minConfidence && point2.score >= minConfidence) {
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(point1.position.x * scaleX, point1.position.y * scaleY);
+                        this.ctx.lineTo(point2.position.x * scaleX, point2.position.y * scaleY);
+                        this.ctx.strokeStyle = '#ffffff';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.stroke();
+                    }
                 });
                 
-                // Draw calibration line if calibrated
-                if (this.isCalibrated && this.baselineY !== null) {
+                // Draw baseline reference line if available
+                if (this.baselineY !== null) {
                     this.ctx.beginPath();
                     this.ctx.moveTo(0, this.baselineY * scaleY);
                     this.ctx.lineTo(this.canvas.width, this.baselineY * scaleY);
                     this.ctx.strokeStyle = '#ff0000';
                     this.ctx.lineWidth = 2;
+                    this.ctx.setLineDash([5, 5]);
                     this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                }
+                
+                // Draw push-up status indicator
+                const statusY = 30;
+                this.ctx.font = 'bold 20px Arial';
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 3;
+                
+                if (this.baselineY === null) {
+                    this.ctx.strokeText('🔍 Detecting position...', 10, statusY);
+                    this.ctx.fillText('🔍 Detecting position...', 10, statusY);
+                } else {
+                    const statusText = this.lastPosition === 'up' ? '⬆️ UP' : 
+                                     this.lastPosition === 'down' ? '⬇️ DOWN' : 
+                                     '➡️ READY';
+                    this.ctx.strokeText(statusText, 10, statusY);
+                    this.ctx.fillText(statusText, 10, statusY);
                 }
             }
             
             analyzePushUp(pose) {
+                this.frameCount++;
+                
                 // Get key body parts for push-up detection
                 const nose = pose.keypoints.find(kp => kp.part === 'nose');
                 const leftShoulder = pose.keypoints.find(kp => kp.part === 'leftShoulder');
                 const rightShoulder = pose.keypoints.find(kp => kp.part === 'rightShoulder');
                 const leftElbow = pose.keypoints.find(kp => kp.part === 'leftElbow');
                 const rightElbow = pose.keypoints.find(kp => kp.part === 'rightElbow');
+                const leftWrist = pose.keypoints.find(kp => kp.part === 'leftWrist');
+                const rightWrist = pose.keypoints.find(kp => kp.part === 'rightWrist');
                 
                 // Calculate average confidence
                 const avgConfidence = pose.keypoints.reduce((sum, kp) => sum + kp.score, 0) / pose.keypoints.length;
                 document.getElementById('confidence').textContent = Math.round(avgConfidence * 100) + '%';
                 
                 // Check if we have enough confidence in key points
-                if (!nose || !leftShoulder || !rightShoulder || 
-                    nose.score < this.minConfidence || 
+                if (!leftShoulder || !rightShoulder || 
                     leftShoulder.score < this.minConfidence || 
                     rightShoulder.score < this.minConfidence) {
                     this.updateStatus('Please position yourself better in the camera view');
                     return;
                 }
                 
-                // Calculate reference point (average of shoulders and nose)
-                const referenceY = (nose.position.y + leftShoulder.position.y + rightShoulder.position.y) / 3;
+                // Calculate body center Y position (shoulders)
+                const bodyY = (leftShoulder.position.y + rightShoulder.position.y) / 2;
                 
-                if (!this.isCalibrated) {
-                    this.updateStatus('Please click "Calibrate" while in starting push-up position (plank)');
+                // Establish adaptive baseline (running average for stability)
+                this.adaptiveBaseline.push(bodyY);
+                if (this.adaptiveBaseline.length > this.baselineHistory) {
+                    this.adaptiveBaseline.shift();
+                }
+                
+                // Set baseline after collecting enough samples
+                if (this.adaptiveBaseline.length >= this.baselineHistory) {
+                    this.baselineY = this.adaptiveBaseline.reduce((sum, y) => sum + y, 0) / this.adaptiveBaseline.length;
+                }
+                
+                if (this.baselineY === null) {
+                    this.updateStatus('🔍 Learning your position... move into plank position');
                     return;
                 }
                 
-                // Determine current position based on reference point
-                let currentPosition = 'neutral';
-                const diff = referenceY - this.baselineY;
+                // Calculate vertical movement from baseline
+                const verticalMovement = bodyY - this.baselineY;
                 
-                if (diff > this.threshold) {
-                    currentPosition = 'down';
-                } else if (diff < -this.threshold / 2) {
-                    currentPosition = 'up';
+                // Determine current position based on movement
+                let currentPosition = 'neutral';
+                
+                if (verticalMovement > this.threshold) {
+                    currentPosition = 'down';  // Body moved down (push-up down position)
+                } else if (verticalMovement < -this.threshold * 0.5) {
+                    currentPosition = 'up';    // Body moved up (push-up up position)
                 } else {
-                    currentPosition = 'neutral';
+                    currentPosition = 'neutral'; // In between
                 }
                 
                 // Add to position history for smoothing
@@ -657,7 +750,7 @@
                     this.positionHistory.shift();
                 }
                 
-                // Get most common position in history
+                // Get most common position in recent history
                 const positionCounts = this.positionHistory.reduce((counts, pos) => {
                     counts[pos] = (counts[pos] || 0) + 1;
                     return counts;
@@ -667,57 +760,40 @@
                     positionCounts[a] > positionCounts[b] ? a : b
                 );
                 
-                // Detect push-up cycle
-                if (this.lastPosition === 'up' && smoothedPosition === 'down') {
+                // Detect push-up cycle: down -> up = complete pushup
+                if (this.lastPosition !== 'up' && smoothedPosition === 'up' && this.frameCount > 30) {
+                    if (this.isInPushUp) {
+                        // Completed a push-up (coming back up)
+                        this.pushupCount++;
+                        this.updateStatus('Push-up completed! 🎉');
+                        this.updateDisplay();
+                        this.isInPushUp = false;
+                        
+                        // Update baseline slightly to adapt to user's movement
+                        this.baselineY = this.baselineY * 0.9 + bodyY * 0.1;
+                    }
+                } else if (this.lastPosition !== 'down' && smoothedPosition === 'down') {
                     // Started going down
-                    this.updateStatus('Going down...');
-                } else if (this.lastPosition === 'down' && smoothedPosition === 'up') {
-                    // Completed a push-up
-                    this.pushupCount++;
-                    this.updateStatus('Push-up completed! 🎉');
-                    this.updateDisplay();
+                    this.updateStatus('Going down... 💪');
+                    this.isInPushUp = true;
+                } else if (smoothedPosition === 'neutral') {
+                    this.updateStatus('Ready for push-ups! 🏃‍♂️');
                 }
                 
                 this.lastPosition = smoothedPosition;
                 this.updatePositionDisplay(smoothedPosition);
             }
             
-            calibrate() {
-                if (!this.net) {
-                    this.updateStatus('Please start the camera first');
-                    return;
-                }
-                
-                // Get current pose to set baseline
-                this.net.estimateSinglePose(this.video, {
-                    flipHorizontal: this.currentFacingMode === 'user', // Same flipping logic as detection
-                    decodingMethod: 'single-person'
-                }).then(pose => {
-                    const nose = pose.keypoints.find(kp => kp.part === 'nose');
-                    const leftShoulder = pose.keypoints.find(kp => kp.part === 'leftShoulder');
-                    const rightShoulder = pose.keypoints.find(kp => kp.part === 'rightShoulder');
-                    
-                    if (nose && leftShoulder && rightShoulder && 
-                        nose.score >= this.minConfidence && 
-                        leftShoulder.score >= this.minConfidence && 
-                        rightShoulder.score >= this.minConfidence) {
-                        
-                        this.baselineY = (nose.position.y + leftShoulder.position.y + rightShoulder.position.y) / 3;
-                        this.isCalibrated = true;
-                        this.updateStatus('Calibrated! Start doing push-ups.');
-                        
-                    } else {
-                        this.updateStatus('Calibration failed. Please position yourself better.');
-                    }
-                });
-            }
-            
             resetCounter() {
                 this.pushupCount = 0;
                 this.lastPosition = 'neutral';
+                this.isInPushUp = false;
+                this.baselineY = null;
+                this.adaptiveBaseline = [];
                 this.positionHistory = [];
+                this.frameCount = 0;
                 this.updateDisplay();
-                this.updateStatus('Counter reset. Ready to count push-ups!');
+                this.updateStatus('Counter reset. Learning your position again...');
             }
             
             updateDisplay() {
