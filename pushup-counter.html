@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pushup Counter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #videoContainer {
+            position: relative;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror for front camera */
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            transform: scaleX(-1); /* Mirror for front camera */
+        }
+
+        .controls {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 10;
+        }
+
+        .counter {
+            font-size: 4rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .status {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .button {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin: 5px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 100;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .instructions {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 0.9rem;
+            opacity: 0.8;
+            max-width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="videoContainer">
+            <video id="video" autoplay muted playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <div class="counter" id="counter">0</div>
+            <div class="status" id="status">Get ready to start!</div>
+            <button class="button" id="resetBtn" onclick="resetCounter()">Reset</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Loading MoveNet...</div>
+        </div>
+
+        <div class="instructions">
+            <p>Position yourself so your full body is visible. Start in plank position.</p>
+        </div>
+    </div>
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@latest"></script>
+
+    <script>
+        let model = null;
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        let pushupCount = 0;
+        let isInDownPosition = false;
+        let isCalibrating = true;
+        let calibrationFrames = 0;
+        let baselineShoulderY = null;
+        let detectionActive = false;
+
+        // Keypoint indices for MoveNet
+        const KEYPOINTS = {
+            LEFT_SHOULDER: 5,
+            RIGHT_SHOULDER: 6,
+            LEFT_WRIST: 9,
+            RIGHT_WRIST: 10,
+            LEFT_HIP: 11,
+            RIGHT_HIP: 12
+        };
+
+        async function setupCamera() {
+            video = document.getElementById('video');
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: 'user',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                });
+                
+                video.srcObject = stream;
+                
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                document.getElementById('status').textContent = 'Camera access denied';
+            }
+        }
+
+        async function loadMoveNet() {
+            try {
+                const detectorConfig = {
+                    modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+                };
+                model = await poseDetection.createDetector(
+                    poseDetection.SupportedModels.MoveNet, 
+                    detectorConfig
+                );
+                console.log('MoveNet loaded successfully');
+                return model;
+            } catch (err) {
+                console.error('Error loading MoveNet:', err);
+                document.getElementById('status').textContent = 'Failed to load MoveNet';
+            }
+        }
+
+        function drawKeypoints(poses) {
+            if (!poses || poses.length === 0) return;
+            
+            const pose = poses[0];
+            if (!pose.keypoints) return;
+
+            ctx.strokeStyle = '#FF6B6B';
+            ctx.fillStyle = '#FF6B6B';
+            ctx.lineWidth = 4;
+
+            // Draw keypoints
+            pose.keypoints.forEach((keypoint) => {
+                if (keypoint.score > 0.3) {
+                    ctx.beginPath();
+                    ctx.arc(keypoint.x, keypoint.y, 6, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
+
+            // Draw skeleton connections
+            const connections = [
+                [KEYPOINTS.LEFT_SHOULDER, KEYPOINTS.RIGHT_SHOULDER],
+                [KEYPOINTS.LEFT_SHOULDER, KEYPOINTS.LEFT_WRIST],
+                [KEYPOINTS.RIGHT_SHOULDER, KEYPOINTS.RIGHT_WRIST],
+                [KEYPOINTS.LEFT_SHOULDER, KEYPOINTS.LEFT_HIP],
+                [KEYPOINTS.RIGHT_SHOULDER, KEYPOINTS.RIGHT_HIP],
+                [KEYPOINTS.LEFT_HIP, KEYPOINTS.RIGHT_HIP]
+            ];
+
+            connections.forEach(([start, end]) => {
+                const startPoint = pose.keypoints[start];
+                const endPoint = pose.keypoints[end];
+                
+                if (startPoint.score > 0.3 && endPoint.score > 0.3) {
+                    ctx.beginPath();
+                    ctx.moveTo(startPoint.x, startPoint.y);
+                    ctx.lineTo(endPoint.x, endPoint.y);
+                    ctx.stroke();
+                }
+            });
+        }
+
+        function detectPushup(poses) {
+            if (!poses || poses.length === 0) return;
+            
+            const pose = poses[0];
+            const keypoints = pose.keypoints;
+            
+            // Get key body parts
+            const leftShoulder = keypoints[KEYPOINTS.LEFT_SHOULDER];
+            const rightShoulder = keypoints[KEYPOINTS.RIGHT_SHOULDER];
+            const leftWrist = keypoints[KEYPOINTS.LEFT_WRIST];
+            const rightWrist = keypoints[KEYPOINTS.RIGHT_WRIST];
+            
+            // Check if all required keypoints are detected with good confidence
+            const minConfidence = 0.3;
+            if (leftShoulder.score < minConfidence || rightShoulder.score < minConfidence ||
+                leftWrist.score < minConfidence || rightWrist.score < minConfidence) {
+                return;
+            }
+
+            // Calculate average positions
+            const avgShoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+            const avgWristY = (leftWrist.y + rightWrist.y) / 2;
+            
+            // Calibration phase - establish baseline
+            if (isCalibrating) {
+                if (calibrationFrames < 30) { // Calibrate for ~1 second at 30fps
+                    if (baselineShoulderY === null) {
+                        baselineShoulderY = avgShoulderY;
+                    } else {
+                        baselineShoulderY = (baselineShoulderY + avgShoulderY) / 2;
+                    }
+                    calibrationFrames++;
+                    document.getElementById('status').textContent = `Calibrating... ${Math.ceil((30 - calibrationFrames) / 30 * 100)}%`;
+                } else {
+                    isCalibrating = false;
+                    detectionActive = true;
+                    document.getElementById('status').textContent = 'Start doing pushups!';
+                }
+                return;
+            }
+
+            if (!detectionActive) return;
+
+            // Pushup detection logic
+            // In a pushup, wrists should be significantly lower than baseline when in down position
+            const shoulderMovement = avgShoulderY - baselineShoulderY;
+            const wristShoulderDiff = avgWristY - avgShoulderY;
+            
+            // Determine if in down position
+            // When doing pushup, shoulders move down and wrists are closer to shoulder level
+            const downThreshold = 50; // pixels
+            const isCurrentlyDown = shoulderMovement > downThreshold;
+            
+            // Count pushup on transition from down to up
+            if (isInDownPosition && !isCurrentlyDown) {
+                pushupCount++;
+                document.getElementById('counter').textContent = pushupCount;
+                document.getElementById('status').textContent = `Pushup #${pushupCount} completed!`;
+                
+                // Brief feedback
+                setTimeout(() => {
+                    document.getElementById('status').textContent = 'Keep going!';
+                }, 1000);
+            }
+            
+            isInDownPosition = isCurrentlyDown;
+        }
+
+        async function detectPose() {
+            if (!model || !video) return;
+
+            try {
+                const poses = await model.estimatePoses(video);
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw pose
+                drawKeypoints(poses);
+                
+                // Detect pushup
+                detectPushup(poses);
+                
+            } catch (err) {
+                console.error('Pose detection error:', err);
+            }
+            
+            requestAnimationFrame(detectPose);
+        }
+
+        function resetCounter() {
+            pushupCount = 0;
+            isInDownPosition = false;
+            isCalibrating = true;
+            calibrationFrames = 0;
+            baselineShoulderY = null;
+            detectionActive = false;
+            document.getElementById('counter').textContent = '0';
+            document.getElementById('status').textContent = 'Get ready to start!';
+        }
+
+        async function init() {
+            // Setup canvas
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            
+            // Setup camera
+            await setupCamera();
+            
+            // Set canvas size to match video
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            
+            // Load MoveNet
+            await loadMoveNet();
+            
+            // Hide loading screen
+            document.getElementById('loading').style.display = 'none';
+            
+            // Start pose detection
+            detectPose();
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', init);
+
+        // Handle orientation changes
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+            }, 500);
+        });
+    </script>
+</body>
+</html> 
