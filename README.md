@@ -172,10 +172,6 @@ Open browser developer tools (F12) → Console tab to see:
 - Canvas API support
 - ES6+ JavaScript features
 
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
 ---
 
 **Built using TensorFlow.js and MoveNet** 
