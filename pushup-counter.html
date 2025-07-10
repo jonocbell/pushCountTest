@@ -171,9 +171,9 @@
         let downPositionFrames = 0;
         let upPositionFrames = 0;
         let lastCountTime = 0;
-        let minDownFrames = 10;       // Must be down for 10+ frames (~333ms at 30fps)
-        let minUpFrames = 8;          // Must be up for 8+ frames before next count
-        let minTimeBetweenCounts = 1000; // Minimum 1 second between pushup counts
+        let minDownFrames = 6;        // Must be down for 6+ frames (~200ms at 30fps) - reduced from 10
+        let minUpFrames = 5;          // Must be up for 5+ frames before next count - reduced from 8
+        let minTimeBetweenCounts = 600; // Minimum 600ms between pushup counts - reduced from 1000
 
         // Keypoint indices for MoveNet
         const KEYPOINTS = {
@@ -337,9 +337,9 @@
             const noseMovement = nose.y - baselineNoseY;
             const wristMovement = avgWristY - baselineWristY;
             
-            // STRICTER thresholds for movement detection (pixels)
-            const noseDownThreshold = 35;  // Nose moves down 35+ pixels (increased from 25)
-            const wristDownThreshold = 40; // Wrists move down 40+ pixels (increased from 30)
+            // MODERATE thresholds for movement detection (pixels) - reduced for better detection
+            const noseDownThreshold = 28;  // Nose moves down 28+ pixels (reduced from 35, originally 25)
+            const wristDownThreshold = 32; // Wrists move down 32+ pixels (reduced from 40, originally 30)
             
             // Down position: both nose and wrists have moved down significantly
             const noseIsDown = noseMovement > noseDownThreshold;
@@ -387,7 +387,7 @@
             }
             
             // Optional: Debug display (uncomment for troubleshooting)
-            // console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down frames: ${downPositionFrames}, Up frames: ${upPositionFrames}, State: ${isInDownPosition ? 'DOWN' : 'UP'}`);
+            console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down frames: ${downPositionFrames}, Up frames: ${upPositionFrames}, State: ${isInDownPosition ? 'DOWN' : 'UP'}`);
         }
 
         async function detectPose() {
