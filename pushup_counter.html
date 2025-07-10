@@ -2,57 +2,91 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Push-Up Counter</title>
+    <meta name="apple-mobile-web-app-title" content="Push-Up Counter">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#667eea">
+    <meta name="msapplication-TileColor" content="#667eea">
+    <meta name="description" content="AI-powered push-up counter using Google's MoveNet model">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" id="manifest-placeholder">
+    
+    <!-- Favicon and Apple Touch Icons -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏋️‍♂️%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏋️‍♂️%3C/text%3E%3C/svg%3E">
+    
+    <title>AI Push-Up Counter - MoveNet</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@latest"></script>
     <style>
+        /* Mobile-first responsive design */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
         body {
-            font-family: 'Arial', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
-            padding: 10px;
+            padding: 8px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            text-align: center;
             min-height: 100vh;
+            min-height: 100dvh; /* Dynamic viewport height for mobile */
             overflow-x: hidden;
+            position: relative;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
         
         .container {
             max-width: 100%;
             margin: 0 auto;
-            padding: 0 5px;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            min-height: 100dvh;
         }
         
         h1 {
-            font-size: clamp(1.5rem, 5vw, 2.5rem);
-            margin-bottom: 20px;
+            font-size: clamp(1.2rem, 6vw, 2rem);
+            margin: 10px 0 15px 0;
+            text-align: center;
+            font-weight: 700;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            line-height: 1.2;
         }
         
+        /* Video container - optimized for mobile screens */
         .video-container {
             position: relative;
-            display: block;
-            border-radius: 15px;
+            border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            margin-bottom: 20px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            margin-bottom: 15px;
             width: 100%;
-            max-width: 480px;
-            margin-left: auto;
-            margin-right: auto;
+            max-height: 50vh; /* Limit height to save screen space */
+            background: #000;
+            flex-shrink: 0;
         }
         
         #video {
             width: 100%;
-            height: auto;
+            height: 100%;
             object-fit: cover;
             display: block;
             transform: scaleX(-1); /* Mirror front camera by default */
+            max-height: 50vh;
         }
         
         #video.rear-camera {
@@ -65,192 +99,328 @@
             left: 0;
             width: 100%;
             height: 100%;
+            pointer-events: none;
         }
         
+        /* Mobile-optimized stats layout */
         .stats {
-            display: flex;
-            justify-content: space-around;
-            margin: 20px 0;
-            flex-wrap: wrap;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin: 15px 0;
+            flex-shrink: 0;
         }
         
         .stat-card {
-            background: rgba(255,255,255,0.1);
-            padding: 15px;
-            border-radius: 15px;
-            flex: 1;
-            min-width: 100px;
+            background: rgba(255,255,255,0.15);
+            padding: 12px 8px;
+            border-radius: 12px;
+            text-align: center;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.2);
+            min-height: 65px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
         .stat-number {
-            font-size: clamp(1.5rem, 8vw, 2.5rem);
-            font-weight: bold;
+            font-size: clamp(1.2rem, 7vw, 2rem);
+            font-weight: 800;
             display: block;
             color: #ffeb3b;
+            line-height: 1;
+            margin-bottom: 2px;
         }
         
         .stat-label {
-            font-size: clamp(0.8rem, 3vw, 1rem);
+            font-size: clamp(0.7rem, 3vw, 0.9rem);
             opacity: 0.9;
+            font-weight: 500;
+            line-height: 1;
         }
         
+        /* Mobile-first button design */
         .controls {
-            margin: 20px 0;
+            margin: 15px 0;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        
+        .button-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
         }
         
         button {
             background: #4CAF50;
             color: white;
             border: none;
-            padding: 16px 32px;
-            font-size: clamp(1rem, 4vw, 1.2rem);
+            padding: 16px 20px;
+            font-size: clamp(0.9rem, 4vw, 1.1rem);
+            font-weight: 600;
             border-radius: 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            width: 100%;
-            max-width: 300px;
-            min-height: 50px;
+            transition: all 0.2s ease;
+            min-height: 52px;
             touch-action: manipulation;
-            -webkit-tap-highlight-color: transparent;
-        }
-        
-        button:hover, button:focus {
-            background: #45a049;
-            transform: translateY(-2px);
-            outline: none;
+            position: relative;
+            overflow: hidden;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            line-height: 1.2;
         }
         
         button:active {
-            transform: translateY(0);
+            transform: scale(0.98);
+            background: #45a049;
         }
         
         button:disabled {
             background: #666;
-            cursor: not-allowed;
+            opacity: 0.6;
             transform: none;
         }
         
-        .instructions {
-            background: rgba(255,255,255,0.1);
-            padding: 15px;
-            border-radius: 15px;
-            margin: 20px 0;
-            text-align: left;
+        button.secondary {
+            background: rgba(255,255,255,0.15);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
         }
         
-        .instructions h3 {
-            font-size: clamp(1rem, 4vw, 1.3rem);
-            margin-bottom: 10px;
+        button.secondary:active {
+            background: rgba(255,255,255,0.25);
+        }
+        
+        /* Mobile-optimized position indicator */
+        .position-indicator {
+            font-size: clamp(1rem, 5vw, 1.3rem);
+            margin: 12px 0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-weight: 700;
+            text-align: center;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        .position-up {
+            background: rgba(76, 175, 80, 0.4);
+            color: #4CAF50;
+            border: 2px solid #4CAF50;
+        }
+        
+        .position-down {
+            background: rgba(255, 152, 0, 0.4);
+            color: #FF9800;
+            border: 2px solid #FF9800;
+        }
+        
+        .position-middle {
+            background: rgba(33, 150, 243, 0.4);
+            color: #2196F3;
+            border: 2px solid #2196F3;
+        }
+        
+        .position-neutral {
+            background: rgba(158, 158, 158, 0.4);
+            color: #9E9E9E;
+            border: 2px solid #9E9E9E;
+        }
+        
+        /* Status message - mobile optimized */
+        .status {
+            font-size: clamp(0.85rem, 3.5vw, 1rem);
+            margin: 12px 0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+            line-height: 1.4;
+            flex-shrink: 0;
+        }
+        
+        /* Instructions - collapsible on mobile */
+        .instructions {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            margin: 15px 0 0 0;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        
+        .instructions-header {
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .instructions-header h3 {
+            font-size: clamp(0.9rem, 4vw, 1.1rem);
+            margin: 0;
+            font-weight: 600;
+        }
+        
+        .instructions-toggle {
+            font-size: 1.2rem;
+            transition: transform 0.2s ease;
+        }
+        
+        .instructions-content {
+            padding: 12px 16px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        
+        .instructions-content.expanded {
+            max-height: 300px;
         }
         
         .instructions ul {
             margin: 0;
-            padding-left: 20px;
+            padding-left: 16px;
         }
         
         .instructions li {
-            font-size: clamp(0.85rem, 3.5vw, 1rem);
-            margin-bottom: 8px;
-            line-height: 1.4;
-        }
-        
-        .status {
-            font-size: clamp(1rem, 4vw, 1.2rem);
-            margin: 15px 0;
-            padding: 12px;
-            border-radius: 12px;
-            background: rgba(0,0,0,0.2);
+            font-size: clamp(0.75rem, 3vw, 0.85rem);
+            margin-bottom: 6px;
             line-height: 1.3;
         }
         
-        .position-indicator {
-            font-size: clamp(1.2rem, 5vw, 1.5rem);
-            margin: 15px 0;
-            padding: 12px;
-            border-radius: 12px;
-            font-weight: bold;
-            line-height: 1.2;
-        }
-        
-        .position-up {
-            background: rgba(76, 175, 80, 0.3);
-            color: #4CAF50;
-        }
-        
-        .position-down {
-            background: rgba(255, 152, 0, 0.3);
-            color: #FF9800;
-        }
-        
-        .position-neutral {
-            background: rgba(158, 158, 158, 0.3);
-            color: #9E9E9E;
-        }
-        
-        /* Mobile optimizations */
-        @media (max-width: 768px) {
-            body {
-                padding: 5px;
-            }
-            
+        /* Landscape orientation optimizations */
+        @media screen and (orientation: landscape) and (max-height: 600px) {
             .container {
-                padding: 0;
-            }
-            
-            .stats {
-                margin: 15px 0;
-            }
-            
-            .stat-card {
-                padding: 12px;
-            }
-            
-            .instructions {
-                padding: 12px;
-            }
-            
-            .instructions li {
-                margin-bottom: 6px;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            body {
-                padding: 3px;
-            }
-            
-            h1 {
-                margin-bottom: 15px;
+                flex-direction: row;
+                align-items: flex-start;
+                gap: 10px;
             }
             
             .video-container {
-                margin-bottom: 15px;
+                flex: 1;
+                max-height: 70vh;
+                margin-bottom: 0;
             }
             
-            .controls {
-                margin: 15px 0;
+            .controls-panel {
+                flex: 0 0 300px;
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                overflow-y: auto;
+                padding-left: 10px;
             }
             
-            button {
-                padding: 14px 28px;
-                min-height: 48px;
+            h1 {
+                font-size: 1.2rem;
+                margin: 5px 0 10px 0;
             }
             
             .stats {
                 margin: 10px 0;
+                gap: 6px;
             }
             
             .stat-card {
-                padding: 10px;
+                padding: 8px 6px;
+                min-height: 50px;
+            }
+            
+            .instructions {
+                margin: 10px 0 0 0;
+            }
+        }
+        
+        /* Very small screens */
+        @media (max-width: 360px) {
+            body {
+                padding: 4px;
+            }
+            
+            h1 {
+                margin: 8px 0 12px 0;
+            }
+            
+            .video-container {
+                margin-bottom: 12px;
+                border-radius: 8px;
+            }
+            
+            .stats {
+                gap: 6px;
+                margin: 12px 0;
+            }
+            
+            .stat-card {
+                padding: 10px 6px;
+                border-radius: 8px;
+                min-height: 60px;
+            }
+            
+            .controls {
+                gap: 10px;
+                margin: 12px 0;
+            }
+            
+            button {
+                min-height: 48px;
+                padding: 14px 16px;
+                border-radius: 8px;
+            }
+            
+            .position-indicator {
+                margin: 10px 0;
+                padding: 10px 12px;
+                border-radius: 8px;
+            }
+            
+            .status {
+                margin: 10px 0;
+                padding: 10px 12px;
+                border-radius: 8px;
+            }
+        }
+        
+        /* Performance optimizations for mobile */
+        .video-container,
+        .stat-card,
+        .position-indicator,
+        .status,
+        .instructions {
+            will-change: auto;
+            transform: translateZ(0);
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+        }
+        
+        /* PWA and fullscreen support */
+        @media (display-mode: standalone) {
+            body {
+                padding-top: max(8px, env(safe-area-inset-top));
+                padding-bottom: max(8px, env(safe-area-inset-bottom));
+                padding-left: max(8px, env(safe-area-inset-left));
+                padding-right: max(8px, env(safe-area-inset-right));
+            }
+        }
+        
+        /* High DPI screens */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            button, .stat-card, .position-indicator, .status {
+                border: 1px solid rgba(255,255,255,0.2);
             }
         }
     </style>
@@ -264,47 +434,56 @@
             <canvas id="canvas"></canvas>
         </div>
         
-        <div class="controls">
-            <button id="startBtn">Start Camera</button>
-            <button id="switchCameraBtn" style="display: none;">Switch Camera 🔄</button>
-            <button id="resetBtn">Reset Counter</button>
-            <button id="debugBtn" style="display: none;">Debug Info 🔍</button>
-        </div>
-        
-        <div class="stats">
-            <div class="stat-card">
-                <span class="stat-number" id="pushupCount">0</span>
-                <span class="stat-label">Push-ups</span>
+        <div class="controls-panel">
+            <div class="controls">
+                <button id="startBtn">Start Camera</button>
+                <div class="button-row">
+                    <button id="switchCameraBtn" class="secondary" style="display: none;">🔄 Switch</button>
+                    <button id="resetBtn" class="secondary">🔄 Reset</button>
+                    <button id="debugBtn" class="secondary" style="display: none;">🔍 Debug</button>
+                </div>
             </div>
-            <div class="stat-card">
-                <span class="stat-number" id="currentPosition">--</span>
-                <span class="stat-label">Position</span>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-number" id="pushupCount">0</span>
+                    <span class="stat-label">Push-ups</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="currentPosition">--</span>
+                    <span class="stat-label">Position</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="confidence">--</span>
+                    <span class="stat-label">Confidence</span>
+                </div>
             </div>
-            <div class="stat-card">
-                <span class="stat-number" id="confidence">--</span>
-                <span class="stat-label">Confidence</span>
+            
+            <div class="position-indicator" id="positionIndicator">
+                Ready to start
             </div>
-        </div>
-        
-        <div class="position-indicator" id="positionIndicator">
-            Ready to start
-        </div>
-        
-        <div class="status" id="status">
-            Click "Start Camera" to begin with Google's MoveNet AI
-        </div>
-        
-        <div class="instructions">
-            <h3>📋 Instructions:</h3>
-            <ul>
-                <li><strong>Advanced AI:</strong> Now powered by Google's MoveNet model - ultra-fast and accurate!</li>
-                <li><strong>Auto-detection:</strong> No calibration needed - just start exercising!</li>
-                <li><strong>Position yourself:</strong> Make sure your upper body and arms are visible in the camera</li>
-                <li><strong>Visual tracking:</strong> Colored keypoints and skeleton show real-time body tracking</li>
-                <li><strong>Smart counting:</strong> Automatically counts complete push-ups with proper form</li>
-                <li><strong>Camera options:</strong> Starts with front camera to see your count, switch to rear if preferred</li>
-                <li><strong>Real-time:</strong> Optimized for mobile with 30+ FPS performance</li>
-            </ul>
+            
+            <div class="status" id="status">
+                Click "Start Camera" to begin with Google's MoveNet AI
+            </div>
+            
+            <div class="instructions">
+                <div class="instructions-header" onclick="toggleInstructions()">
+                    <h3>📋 Instructions</h3>
+                    <span class="instructions-toggle" id="instructionsToggle">▼</span>
+                </div>
+                <div class="instructions-content" id="instructionsContent">
+                    <ul>
+                        <li><strong>Advanced AI:</strong> Now powered by Google's MoveNet model - ultra-fast and accurate!</li>
+                        <li><strong>Auto-detection:</strong> No calibration needed - just start exercising!</li>
+                        <li><strong>Position yourself:</strong> Make sure your upper body and arms are visible in the camera</li>
+                        <li><strong>Visual tracking:</strong> Colored keypoints and skeleton show real-time body tracking</li>
+                        <li><strong>Smart counting:</strong> Automatically counts complete push-ups with proper form</li>
+                        <li><strong>Camera options:</strong> Starts with front camera to see your count, switch to rear if preferred</li>
+                        <li><strong>Real-time:</strong> Optimized for mobile with 30+ FPS performance</li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -503,12 +682,36 @@
             }
             
             setupCanvas() {
-                // Set canvas size to match video dimensions
-                const rect = this.video.getBoundingClientRect();
-                this.canvas.width = rect.width;
-                this.canvas.height = rect.height;
-                this.canvas.style.width = rect.width + 'px';
-                this.canvas.style.height = rect.height + 'px';
+                // Set canvas size to match video dimensions with mobile optimization
+                const videoRect = this.video.getBoundingClientRect();
+                
+                // Use device pixel ratio for crisp rendering on high-DPI screens
+                const devicePixelRatio = window.devicePixelRatio || 1;
+                
+                // Set display size (CSS pixels)
+                this.canvas.style.width = videoRect.width + 'px';
+                this.canvas.style.height = videoRect.height + 'px';
+                
+                // Set actual size in memory (scaled by device pixel ratio for clarity)
+                // But limit to reasonable size for mobile performance
+                const maxSize = 640; // Maximum dimension for mobile performance
+                let canvasWidth = videoRect.width * devicePixelRatio;
+                let canvasHeight = videoRect.height * devicePixelRatio;
+                
+                // Scale down if too large for mobile
+                if (canvasWidth > maxSize || canvasHeight > maxSize) {
+                    const scale = Math.min(maxSize / canvasWidth, maxSize / canvasHeight);
+                    canvasWidth *= scale;
+                    canvasHeight *= scale;
+                }
+                
+                this.canvas.width = canvasWidth;
+                this.canvas.height = canvasHeight;
+                
+                // Scale the drawing context back to match the display size
+                this.ctx.scale(canvasWidth / videoRect.width, canvasHeight / videoRect.height);
+                
+                console.log(`Canvas setup: display ${videoRect.width}x${videoRect.height}, memory ${canvasWidth}x${canvasHeight}, DPR: ${devicePixelRatio}`);
             }
             
             updateVideoMirror() {
@@ -659,10 +862,25 @@
                     this.updateStatus('Error detecting pose: ' + error.message);
                 }
                 
-                // Improved frame rate for better performance (30 FPS instead of 10 FPS)
+                // Adaptive frame rate for mobile battery optimization
+                let frameInterval = 33; // Default 30 FPS
+                
+                // Adjust frame rate based on performance and battery
+                if (this.inferenceTime > 50) {
+                    frameInterval = 66; // 15 FPS for slower devices
+                } else if (this.inferenceTime > 30) {
+                    frameInterval = 50; // 20 FPS for medium devices
+                }
+                
+                // Further reduce frame rate if device seems to be struggling
+                if (navigator.deviceMemory && navigator.deviceMemory < 4) {
+                    frameInterval = Math.max(frameInterval, 50); // Max 20 FPS for low-memory devices
+                }
+                
+                // Use requestAnimationFrame for smooth performance
                 setTimeout(() => {
                     requestAnimationFrame(() => this.detectPoses());
-                }, 33); // ~30 FPS for smooth real-time detection
+                }, frameInterval);
             }
             
             async warmUpModel() {
@@ -736,9 +954,10 @@
                 
                 const minConfidence = this.minConfidence;
                 
-                // Calculate scaling factors for mobile
-                const scaleX = this.canvas.width / this.video.videoWidth;
-                const scaleY = this.canvas.height / this.video.videoHeight;
+                // Calculate scaling factors for the current canvas setup
+                const videoRect = this.video.getBoundingClientRect();
+                const scaleX = videoRect.width / this.video.videoWidth;
+                const scaleY = videoRect.height / this.video.videoHeight;
                 
                 // Get key body parts for visual tracking (MoveNet format)
                 const nose = pose.keypoints.find(kp => kp.name === 'nose');
@@ -751,29 +970,26 @@
                 const leftHip = pose.keypoints.find(kp => kp.name === 'left_hip');
                 const rightHip = pose.keypoints.find(kp => kp.name === 'right_hip');
                 
-                // Draw body tracking box
-                if (leftShoulder && rightShoulder && leftHip && rightHip && 
-                    leftShoulder.score >= minConfidence && rightShoulder.score >= minConfidence &&
-                    leftHip.score >= minConfidence && rightHip.score >= minConfidence) {
-                    
+                // Draw body tracking box (simplified for mobile performance)
+                if (leftShoulder && rightShoulder && leftShoulder.score >= minConfidence && rightShoulder.score >= minConfidence) {
                     const centerX = ((leftShoulder.x + rightShoulder.x) / 2) * scaleX;
                     const centerY = ((leftShoulder.y + rightShoulder.y) / 2) * scaleY;
-                    const bodyWidth = Math.abs(rightShoulder.x - leftShoulder.x) * scaleX * 1.5;
-                    const bodyHeight = Math.abs(((leftHip.y + rightHip.y) / 2) - ((leftShoulder.y + rightShoulder.y) / 2)) * scaleY * 1.2;
+                    const bodyWidth = Math.abs(rightShoulder.x - leftShoulder.x) * scaleX * 1.8;
+                    const bodyHeight = bodyWidth * 1.5; // Estimated body height
                     
                     // Draw body tracking rectangle
                     this.ctx.strokeStyle = '#00ff00';
-                    this.ctx.lineWidth = 3;
+                    this.ctx.lineWidth = 2;
                     this.ctx.strokeRect(centerX - bodyWidth/2, centerY - bodyHeight/2, bodyWidth, bodyHeight);
                     
                     // Draw center point
                     this.ctx.fillStyle = '#ff0000';
                     this.ctx.beginPath();
-                    this.ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+                    this.ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
                     this.ctx.fill();
                 }
                 
-                // Draw key points with different colors for different body parts (MoveNet format)
+                // Draw key points with different colors (optimized set for mobile)
                 const keyPointColors = {
                     'nose': '#ff0000',
                     'left_shoulder': '#00ff00',
@@ -781,37 +997,33 @@
                     'left_elbow': '#ffff00',
                     'right_elbow': '#ffff00',
                     'left_wrist': '#ff00ff',
-                    'right_wrist': '#ff00ff',
-                    'left_hip': '#00ffff',
-                    'right_hip': '#00ffff'
+                    'right_wrist': '#ff00ff'
                 };
                 
+                // Only draw important keypoints for performance
                 pose.keypoints.forEach(keypoint => {
                     if (keypoint.score >= minConfidence && keyPointColors[keypoint.name]) {
                         this.ctx.beginPath();
                         this.ctx.arc(
                             keypoint.x * scaleX, 
                             keypoint.y * scaleY, 
-                            6, 0, 2 * Math.PI
+                            4, 0, 2 * Math.PI
                         );
                         this.ctx.fillStyle = keyPointColors[keypoint.name];
                         this.ctx.fill();
                         this.ctx.strokeStyle = '#ffffff';
-                        this.ctx.lineWidth = 2;
+                        this.ctx.lineWidth = 1;
                         this.ctx.stroke();
                     }
                 });
                 
-                // Draw skeleton connections (MoveNet format)
+                // Draw essential skeleton connections only (for mobile performance)
                 const connections = [
                     ['left_shoulder', 'right_shoulder'],
                     ['left_shoulder', 'left_elbow'],
                     ['right_shoulder', 'right_elbow'],
                     ['left_elbow', 'left_wrist'],
-                    ['right_elbow', 'right_wrist'],
-                    ['left_shoulder', 'left_hip'],
-                    ['right_shoulder', 'right_hip'],
-                    ['left_hip', 'right_hip']
+                    ['right_elbow', 'right_wrist']
                 ];
                 
                 connections.forEach(([part1, part2]) => {
@@ -823,21 +1035,21 @@
                         this.ctx.moveTo(point1.x * scaleX, point1.y * scaleY);
                         this.ctx.lineTo(point2.x * scaleX, point2.y * scaleY);
                         this.ctx.strokeStyle = '#ffffff';
-                        this.ctx.lineWidth = 3;
+                        this.ctx.lineWidth = 2;
                         this.ctx.stroke();
                     }
                 });
                 
-                // Draw push-up status indicator
-                const statusY = 30;
-                this.ctx.font = 'bold 20px Arial';
+                // Draw push-up status indicator (mobile-optimized)
+                const statusY = 25;
+                this.ctx.font = 'bold 16px -apple-system, sans-serif';
                 this.ctx.fillStyle = '#ffffff';
                 this.ctx.strokeStyle = '#000000';
-                this.ctx.lineWidth = 3;
+                this.ctx.lineWidth = 2;
                 
                 const statusText = this.position === 'up' ? '⬆️ UP' : 
                                  this.position === 'down' ? '⬇️ DOWN' : 
-                                 this.position === 'middle' ? '🔄 MIDDLE' :
+                                 this.position === 'middle' ? '🔄 MID' :
                                  '➡️ READY';
                 this.ctx.strokeText(statusText, 10, statusY);
                 this.ctx.fillText(statusText, 10, statusY);
@@ -989,33 +1201,91 @@
             }
         }
         
-        // Initialize the push-up counter when the page loads
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Initialize TensorFlow.js backend for optimal performance
-            await tf.ready();
-            console.log('TensorFlow.js backend:', tf.getBackend());
-            
-            const counter = new PushUpCounter();
-            
-            // Handle orientation changes on mobile
-            window.addEventListener('resize', () => {
-                if (counter.video.srcObject) {
-                    setTimeout(() => {
-                        counter.setupCanvas();
-                    }, 100);
+        // Initialize the app
+        const pushUpCounter = new PushUpCounter();
+        
+        // Generate PWA manifest dynamically
+        const manifest = {
+            "name": "AI Push-Up Counter",
+            "short_name": "Push-Up Counter",
+            "description": "AI-powered push-up counter using Google's MoveNet model",
+            "start_url": "./",
+            "display": "standalone",
+            "background_color": "#667eea",
+            "theme_color": "#667eea",
+            "orientation": "portrait-primary",
+            "icons": [
+                {
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%23667eea'/%3E%3Ctext x='96' y='130' font-size='120' text-anchor='middle'%3E🏋️‍♂️%3C/text%3E%3C/svg%3E",
+                    "sizes": "192x192",
+                    "type": "image/svg+xml"
+                },
+                {
+                    "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%23667eea'/%3E%3Ctext x='256' y='350' font-size='320' text-anchor='middle'%3E🏋️‍♂️%3C/text%3E%3C/svg%3E",
+                    "sizes": "512x512",
+                    "type": "image/svg+xml"
                 }
-            });
+            ]
+        };
+        
+        // Create and inject manifest
+        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(manifestBlob);
+        document.getElementById('manifest-placeholder').href = manifestURL;
+        
+        // Mobile-specific functionality
+        function toggleInstructions() {
+            const content = document.getElementById('instructionsContent');
+            const toggle = document.getElementById('instructionsToggle');
             
-            // Prevent zoom on double tap
-            let lastTouchEnd = 0;
-            document.addEventListener('touchend', (event) => {
-                const now = (new Date()).getTime();
-                if (now - lastTouchEnd <= 300) {
-                    event.preventDefault();
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                toggle.textContent = '▼';
+                toggle.style.transform = 'rotate(0deg)';
+            } else {
+                content.classList.add('expanded');
+                toggle.textContent = '▲';
+                toggle.style.transform = 'rotate(180deg)';
+            }
+        }
+        
+        // Prevent zoom on double-tap for better mobile experience
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+        
+        // Handle orientation changes
+        window.addEventListener('orientationchange', function() {
+            setTimeout(() => {
+                if (pushUpCounter.video && pushUpCounter.video.srcObject) {
+                    pushUpCounter.setupCanvas();
                 }
-                lastTouchEnd = now;
-            }, false);
+            }, 500);
         });
+        
+        // Optimize for mobile performance
+        if ('serviceWorker' in navigator) {
+            // Register service worker for PWA functionality (optional)
+            // navigator.serviceWorker.register('/sw.js');
+        }
+        
+        // Prevent mobile browser pulldown refresh
+        document.body.addEventListener('touchstart', e => {
+            if (e.touches.length === 1 && window.scrollY === 0) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        
+        document.body.addEventListener('touchmove', e => {
+            if (e.touches.length === 1 && window.scrollY === 0) {
+                e.preventDefault();
+            }
+        }, { passive: false });
     </script>
 </body>
 </html> 
