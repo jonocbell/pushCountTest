@@ -364,8 +364,8 @@
             const timeSinceLastCount = currentTime - lastCountTime;
             const cooldownPassed = timeSinceLastCount >= minTimeBetweenCounts;
             
-            // Count pushup ONLY on stable transition from down to up with cooldown
-            if (isInDownPosition && isCurrentlyUp && cooldownPassed) {
+            // Count pushup ONLY on stable transition from down to up (COOLDOWN TEMPORARILY DISABLED)
+            if (isInDownPosition && isCurrentlyUp) {
                 pushupCount++;
                 lastCountTime = currentTime;
                 document.getElementById('counter').textContent = pushupCount;
@@ -387,7 +387,7 @@
             }
             
             // Optional: Debug display (uncomment for troubleshooting)
-            console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down frames: ${downPositionFrames}, Up frames: ${upPositionFrames}, State: ${isInDownPosition ? 'DOWN' : 'UP'}`);
+            console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down frames: ${downPositionFrames}, Up frames: ${upPositionFrames}, State: ${isInDownPosition ? 'DOWN' : 'UP'}, Cooldown: ${cooldownPassed}, TimeSince: ${timeSinceLastCount}ms`);
         }
 
         async function detectPose() {
