@@ -51,6 +51,11 @@
             height: auto;
             object-fit: cover;
             display: block;
+            transform: scaleX(-1); /* Mirror front camera by default */
+        }
+        
+        #video.rear-camera {
+            transform: scaleX(1); /* Don't mirror rear camera */
         }
         
         #canvas {
@@ -254,12 +259,13 @@
         <h1>🏋️‍♂️ Push-Up Counter</h1>
         
         <div class="video-container">
-            <video id="video" autoplay muted></video>
+            <video id="video" autoplay muted playsinline webkit-playsinline></video>
             <canvas id="canvas"></canvas>
         </div>
         
         <div class="controls">
             <button id="startBtn">Start Camera</button>
+            <button id="switchCameraBtn" style="display: none;">Switch Camera 🔄</button>
             <button id="resetBtn">Reset Counter</button>
             <button id="calibrateBtn">Calibrate</button>
         </div>
@@ -290,11 +296,12 @@
         <div class="instructions">
             <h3>📋 Instructions:</h3>
             <ul>
+                <li><strong>Camera:</strong> Starts with front camera so you can see the count. Switch to rear camera if needed</li>
                 <li><strong>Position yourself:</strong> Make sure your whole body is visible in the camera</li>
                 <li><strong>Calibrate:</strong> Click "Calibrate" while in the starting push-up position (plank)</li>
                 <li><strong>Perform push-ups:</strong> Do full push-ups with proper form</li>
                 <li><strong>Good lighting:</strong> Ensure you have adequate lighting for better detection</li>
-                <li><strong>Steady camera:</strong> Keep your device stable for best results</li>
+                <li><strong>Steady device:</strong> Keep your device stable for best results</li>
             </ul>
         </div>
     </div>
@@ -307,6 +314,8 @@
                 this.ctx = this.canvas.getContext('2d');
                 this.net = null;
                 this.isRunning = false;
+                this.currentStream = null;
+                this.currentFacingMode = 'user'; // Start with front camera so user can see the count
                 
                 // Push-up detection variables
                 this.pushupCount = 0;
@@ -325,6 +334,10 @@
             setupEventListeners() {
                 document.getElementById('startBtn').addEventListener('click', () => {
                     this.startCamera();
+                });
+                
+                document.getElementById('switchCameraBtn').addEventListener('click', () => {
+                    this.switchCamera();
                 });
                 
                 document.getElementById('resetBtn').addEventListener('click', () => {
@@ -366,17 +379,20 @@
                             video: { 
                                 width: { ideal: 640, max: 1280 },
                                 height: { ideal: 480, max: 720 },
-                                facingMode: 'environment'
+                                facingMode: this.currentFacingMode
                             }
                         };
                         
                         navigator.getUserMedia(constraints, (stream) => {
+                            this.currentStream = stream;
                             this.video.srcObject = stream;
                             this.video.addEventListener('loadeddata', () => {
                                 this.setupCanvas();
                                 this.loadModel();
+                                this.updateVideoMirror();
                             });
                             document.getElementById('startBtn').disabled = true;
+                            document.getElementById('switchCameraBtn').style.display = 'block';
                         }, (error) => {
                             console.error('Legacy getUserMedia error:', error);
                             this.updateStatus('Error: ' + error.message);
@@ -384,32 +400,37 @@
                         return;
                     }
                     
-                    // Try rear camera first (better for push-ups), fall back to front camera
+                    // Use current facing mode (starts with front camera so user can see the count)
                     let constraints = {
                         video: { 
                             width: { ideal: 640, max: 1280 },
                             height: { ideal: 480, max: 720 },
-                            facingMode: 'environment' // rear camera
+                            facingMode: this.currentFacingMode
                         }
                     };
                     
                     try {
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.currentStream = stream;
                         this.video.srcObject = stream;
                     } catch (error) {
-                        // Fallback to front camera
-                        console.log('Rear camera not available, using front camera');
-                        constraints.video.facingMode = 'user';
+                        // Fallback to opposite camera
+                        console.log(`${this.currentFacingMode} camera not available, trying opposite camera`);
+                        constraints.video.facingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
                         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.currentStream = stream;
+                        this.currentFacingMode = constraints.video.facingMode;
                         this.video.srcObject = stream;
                     }
                     
                     this.video.addEventListener('loadeddata', () => {
                         this.setupCanvas();
                         this.loadModel();
+                        this.updateVideoMirror();
                     });
                     
                     document.getElementById('startBtn').disabled = true;
+                    document.getElementById('switchCameraBtn').style.display = 'block';
                     
                 } catch (error) {
                     console.error('Error accessing camera:', error);
@@ -429,6 +450,49 @@
                 }
             }
             
+            async switchCamera() {
+                try {
+                    // Stop current stream
+                    if (this.currentStream) {
+                        this.currentStream.getTracks().forEach(track => track.stop());
+                    }
+                    
+                    // Switch facing mode
+                    this.currentFacingMode = this.currentFacingMode === 'user' ? 'environment' : 'user';
+                    
+                    // Start new stream
+                    this.updateStatus('Switching camera...');
+                    
+                    const constraints = {
+                        video: { 
+                            width: { ideal: 640, max: 1280 },
+                            height: { ideal: 480, max: 720 },
+                            facingMode: this.currentFacingMode
+                        }
+                    };
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.currentStream = stream;
+                    this.video.srcObject = stream;
+                    
+                    // Reset calibration when switching cameras
+                    this.isCalibrated = false;
+                    this.baselineY = null;
+                    this.positionHistory = [];
+                    this.lastPosition = 'neutral';
+                    
+                                         this.video.addEventListener('loadeddata', () => {
+                         this.setupCanvas();
+                         this.updateVideoMirror();
+                         this.updateStatus('Camera switched! Please calibrate again.');
+                     });
+                    
+                } catch (error) {
+                    console.error('Error switching camera:', error);
+                    this.updateStatus('Error switching camera: ' + error.message);
+                }
+            }
+            
             setupCanvas() {
                 // Set canvas size to match video dimensions
                 const rect = this.video.getBoundingClientRect();
@@ -436,6 +500,15 @@
                 this.canvas.height = rect.height;
                 this.canvas.style.width = rect.width + 'px';
                 this.canvas.style.height = rect.height + 'px';
+            }
+            
+            updateVideoMirror() {
+                // Mirror front camera, don't mirror rear camera
+                if (this.currentFacingMode === 'user') {
+                    this.video.classList.remove('rear-camera');
+                } else {
+                    this.video.classList.add('rear-camera');
+                }
             }
             
             async loadModel() {
@@ -469,7 +542,7 @@
                 
                 try {
                     const pose = await this.net.estimateSinglePose(this.video, {
-                        flipHorizontal: false, // Don't flip for rear camera
+                        flipHorizontal: this.currentFacingMode === 'user', // Flip for front camera, not for rear
                         decodingMethod: 'single-person'
                     });
                     
@@ -617,7 +690,7 @@
                 
                 // Get current pose to set baseline
                 this.net.estimateSinglePose(this.video, {
-                    flipHorizontal: true,
+                    flipHorizontal: this.currentFacingMode === 'user', // Same flipping logic as detection
                     decodingMethod: 'single-person'
                 }).then(pose => {
                     const nose = pose.keypoints.find(kp => kp.part === 'nose');
