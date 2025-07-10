@@ -163,11 +163,13 @@
         let isInDownPosition = false;
         let isCalibrating = true;
         let calibrationFrames = 0;
-        let baselineShoulderY = null;
+        let baselineNoseY = null;
+        let baselineWristY = null;
         let detectionActive = false;
 
         // Keypoint indices for MoveNet
         const KEYPOINTS = {
+            NOSE: 0,
             LEFT_SHOULDER: 5,
             RIGHT_SHOULDER: 6,
             LEFT_WRIST: 9,
@@ -266,33 +268,49 @@
             const pose = poses[0];
             const keypoints = pose.keypoints;
             
-            // Get key body parts
-            const leftShoulder = keypoints[KEYPOINTS.LEFT_SHOULDER];
-            const rightShoulder = keypoints[KEYPOINTS.RIGHT_SHOULDER];
+            // Primary tracking: Nose (most reliable for side view)
+            const nose = keypoints[KEYPOINTS.NOSE];
             const leftWrist = keypoints[KEYPOINTS.LEFT_WRIST];
             const rightWrist = keypoints[KEYPOINTS.RIGHT_WRIST];
             
-            // Check if all required keypoints are detected with good confidence
+            // Require nose, allow partial wrist data
             const minConfidence = 0.3;
-            if (leftShoulder.score < minConfidence || rightShoulder.score < minConfidence ||
-                leftWrist.score < minConfidence || rightWrist.score < minConfidence) {
-                return;
+            if (nose.score < minConfidence) {
+                return; // Nose is essential
             }
 
-            // Calculate average positions
-            const avgShoulderY = (leftShoulder.y + rightShoulder.y) / 2;
-            const avgWristY = (leftWrist.y + rightWrist.y) / 2;
+            // Get best available wrist (prefer both, fallback to one)
+            let avgWristY = null;
+            let wristCount = 0;
             
-            // Calibration phase - establish baseline
+            if (leftWrist.score >= minConfidence) {
+                avgWristY = leftWrist.y;
+                wristCount++;
+            }
+            if (rightWrist.score >= minConfidence) {
+                avgWristY = wristCount > 0 ? (avgWristY + rightWrist.y) / 2 : rightWrist.y;
+                wristCount++;
+            }
+            
+            // Skip if no wrists detected
+            if (wristCount === 0) {
+                return;
+            }
+            
+            // Calibration phase - establish baseline positions
             if (isCalibrating) {
                 if (calibrationFrames < 30) { // Calibrate for ~1 second at 30fps
-                    if (baselineShoulderY === null) {
-                        baselineShoulderY = avgShoulderY;
+                    // Initialize or update baseline nose position
+                    if (baselineNoseY === null) {
+                        baselineNoseY = nose.y;
+                        baselineWristY = avgWristY;
                     } else {
-                        baselineShoulderY = (baselineShoulderY + avgShoulderY) / 2;
+                        baselineNoseY = (baselineNoseY + nose.y) / 2;
+                        baselineWristY = (baselineWristY + avgWristY) / 2;
                     }
                     calibrationFrames++;
-                    document.getElementById('status').textContent = `Calibrating... ${Math.ceil((30 - calibrationFrames) / 30 * 100)}%`;
+                    const progress = Math.ceil((calibrationFrames / 30) * 100);
+                    document.getElementById('status').textContent = `Calibrating... ${progress}%`;
                 } else {
                     isCalibrating = false;
                     detectionActive = true;
@@ -303,15 +321,22 @@
 
             if (!detectionActive) return;
 
-            // Pushup detection logic
-            // In a pushup, wrists should be significantly lower than baseline when in down position
-            const shoulderMovement = avgShoulderY - baselineShoulderY;
-            const wristShoulderDiff = avgWristY - avgShoulderY;
+            // LOW-ANGLE SIDE VIEW DETECTION:
+            // - Down position: nose moves DOWN (closer to ground), wrists move DOWN
+            // - Up position: nose moves UP (away from ground), wrists move UP
+            // - Look for synchronized movement between nose and wrists
             
-            // Determine if in down position
-            // When doing pushup, shoulders move down and wrists are closer to shoulder level
-            const downThreshold = 50; // pixels
-            const isCurrentlyDown = shoulderMovement > downThreshold;
+            const noseMovement = nose.y - baselineNoseY;
+            const wristMovement = avgWristY - baselineWristY;
+            
+            // Thresholds for movement detection (pixels)
+            const noseDownThreshold = 25;  // Nose moves down 25+ pixels
+            const wristDownThreshold = 30; // Wrists move down 30+ pixels
+            
+            // Down position: both nose and wrists have moved down significantly
+            const noseIsDown = noseMovement > noseDownThreshold;
+            const wristsAreDown = wristMovement > wristDownThreshold;
+            const isCurrentlyDown = noseIsDown && wristsAreDown;
             
             // Count pushup on transition from down to up
             if (isInDownPosition && !isCurrentlyDown) {
@@ -319,13 +344,16 @@
                 document.getElementById('counter').textContent = pushupCount;
                 document.getElementById('status').textContent = `Pushup #${pushupCount} completed!`;
                 
-                // Brief feedback
+                // Brief success feedback
                 setTimeout(() => {
                     document.getElementById('status').textContent = 'Keep going!';
                 }, 1000);
             }
             
             isInDownPosition = isCurrentlyDown;
+            
+            // Optional: Debug display (comment out for production)
+            // console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down: ${isCurrentlyDown}`);
         }
 
         async function detectPose() {
@@ -355,7 +383,8 @@
             isInDownPosition = false;
             isCalibrating = true;
             calibrationFrames = 0;
-            baselineShoulderY = null;
+            baselineNoseY = null;
+            baselineWristY = null;
             detectionActive = false;
             document.getElementById('counter').textContent = '0';
             document.getElementById('status').textContent = 'Get ready to start!';
