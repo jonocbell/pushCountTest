@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Push-Up Counter</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@latest"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0 5px;
+        }
+        
+        h1 {
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .video-container {
+            position: relative;
+            display: block;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        #video {
+            width: 100%;
+            height: auto;
+            object-fit: cover;
+            display: block;
+        }
+        
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 15px;
+            flex: 1;
+            min-width: 100px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .stat-number {
+            font-size: clamp(1.5rem, 8vw, 2.5rem);
+            font-weight: bold;
+            display: block;
+            color: #ffeb3b;
+        }
+        
+        .stat-label {
+            font-size: clamp(0.8rem, 3vw, 1rem);
+            opacity: 0.9;
+        }
+        
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            font-size: clamp(1rem, 4vw, 1.2rem);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            max-width: 300px;
+            min-height: 50px;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        button:hover, button:focus {
+            background: #45a049;
+            transform: translateY(-2px);
+            outline: none;
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .instructions {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 15px;
+            margin: 20px 0;
+            text-align: left;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .instructions h3 {
+            font-size: clamp(1rem, 4vw, 1.3rem);
+            margin-bottom: 10px;
+        }
+        
+        .instructions ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            font-size: clamp(0.85rem, 3.5vw, 1rem);
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        
+        .status {
+            font-size: clamp(1rem, 4vw, 1.2rem);
+            margin: 15px 0;
+            padding: 12px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.2);
+            line-height: 1.3;
+        }
+        
+        .position-indicator {
+            font-size: clamp(1.2rem, 5vw, 1.5rem);
+            margin: 15px 0;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+        
+        .position-up {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+        }
+        
+        .position-down {
+            background: rgba(255, 152, 0, 0.3);
+            color: #FF9800;
+        }
+        
+        .position-neutral {
+            background: rgba(158, 158, 158, 0.3);
+            color: #9E9E9E;
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 5px;
+            }
+            
+            .container {
+                padding: 0;
+            }
+            
+            .stats {
+                margin: 15px 0;
+            }
+            
+            .stat-card {
+                padding: 12px;
+            }
+            
+            .instructions {
+                padding: 12px;
+            }
+            
+            .instructions li {
+                margin-bottom: 6px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 3px;
+            }
+            
+            h1 {
+                margin-bottom: 15px;
+            }
+            
+            .video-container {
+                margin-bottom: 15px;
+            }
+            
+            .controls {
+                margin: 15px 0;
+            }
+            
+            button {
+                padding: 14px 28px;
+                min-height: 48px;
+            }
+            
+            .stats {
+                margin: 10px 0;
+            }
+            
+            .stat-card {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏋️‍♂️ Push-Up Counter</h1>
+        
+        <div class="video-container">
+            <video id="video" autoplay muted></video>
+            <canvas id="canvas"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn">Start Camera</button>
+            <button id="resetBtn">Reset Counter</button>
+            <button id="calibrateBtn">Calibrate</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <span class="stat-number" id="pushupCount">0</span>
+                <span class="stat-label">Push-ups</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="currentPosition">--</span>
+                <span class="stat-label">Position</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number" id="confidence">--</span>
+                <span class="stat-label">Confidence</span>
+            </div>
+        </div>
+        
+        <div class="position-indicator" id="positionIndicator">
+            Ready to start
+        </div>
+        
+        <div class="status" id="status">
+            Click "Start Camera" to begin
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 Instructions:</h3>
+            <ul>
+                <li><strong>Position yourself:</strong> Make sure your whole body is visible in the camera</li>
+                <li><strong>Calibrate:</strong> Click "Calibrate" while in the starting push-up position (plank)</li>
+                <li><strong>Perform push-ups:</strong> Do full push-ups with proper form</li>
+                <li><strong>Good lighting:</strong> Ensure you have adequate lighting for better detection</li>
+                <li><strong>Steady camera:</strong> Keep your device stable for best results</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        class PushUpCounter {
+            constructor() {
+                this.video = document.getElementById('video');
+                this.canvas = document.getElementById('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.net = null;
+                this.isRunning = false;
+                
+                // Push-up detection variables
+                this.pushupCount = 0;
+                this.lastPosition = 'neutral';
+                this.isCalibrated = false;
+                this.baselineY = null;
+                this.threshold = 50; // pixels
+                this.minConfidence = 0.5;
+                this.positionHistory = [];
+                this.historySize = 5;
+                
+                this.setupEventListeners();
+                this.updateDisplay();
+            }
+            
+            setupEventListeners() {
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    this.startCamera();
+                });
+                
+                document.getElementById('resetBtn').addEventListener('click', () => {
+                    this.resetCounter();
+                });
+                
+                document.getElementById('calibrateBtn').addEventListener('click', () => {
+                    this.calibrate();
+                });
+            }
+            
+            async startCamera() {
+                try {
+                    this.updateStatus('Loading camera...');
+                    
+                    // Check if running on HTTPS or localhost
+                    const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+                    
+                    if (!isSecure) {
+                        this.updateStatus('⚠️ Camera requires HTTPS. Please use: 1) GitHub Pages 2) CodePen 3) Netlify Drop');
+                        return;
+                    }
+                    
+                    // Check for getUserMedia support
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        // Fallback for older browsers
+                        navigator.getUserMedia = navigator.getUserMedia || 
+                                               navigator.webkitGetUserMedia || 
+                                               navigator.mozGetUserMedia || 
+                                               navigator.msGetUserMedia;
+                        
+                        if (!navigator.getUserMedia) {
+                            this.updateStatus('❌ Camera not supported by your browser. Try Chrome or Safari.');
+                            return;
+                        }
+                        
+                        // Use legacy getUserMedia
+                        const constraints = {
+                            video: { 
+                                width: { ideal: 640, max: 1280 },
+                                height: { ideal: 480, max: 720 },
+                                facingMode: 'environment'
+                            }
+                        };
+                        
+                        navigator.getUserMedia(constraints, (stream) => {
+                            this.video.srcObject = stream;
+                            this.video.addEventListener('loadeddata', () => {
+                                this.setupCanvas();
+                                this.loadModel();
+                            });
+                            document.getElementById('startBtn').disabled = true;
+                        }, (error) => {
+                            console.error('Legacy getUserMedia error:', error);
+                            this.updateStatus('Error: ' + error.message);
+                        });
+                        return;
+                    }
+                    
+                    // Try rear camera first (better for push-ups), fall back to front camera
+                    let constraints = {
+                        video: { 
+                            width: { ideal: 640, max: 1280 },
+                            height: { ideal: 480, max: 720 },
+                            facingMode: 'environment' // rear camera
+                        }
+                    };
+                    
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.video.srcObject = stream;
+                    } catch (error) {
+                        // Fallback to front camera
+                        console.log('Rear camera not available, using front camera');
+                        constraints.video.facingMode = 'user';
+                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.video.srcObject = stream;
+                    }
+                    
+                    this.video.addEventListener('loadeddata', () => {
+                        this.setupCanvas();
+                        this.loadModel();
+                    });
+                    
+                    document.getElementById('startBtn').disabled = true;
+                    
+                } catch (error) {
+                    console.error('Error accessing camera:', error);
+                    let errorMessage = 'Error accessing camera: ';
+                    
+                    if (error.name === 'NotAllowedError') {
+                        errorMessage += 'Camera permission denied. Please allow camera access.';
+                    } else if (error.name === 'NotFoundError') {
+                        errorMessage += 'No camera found on this device.';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMessage += 'Camera not supported by your browser.';
+                    } else {
+                        errorMessage += error.message;
+                    }
+                    
+                    this.updateStatus(errorMessage);
+                }
+            }
+            
+            setupCanvas() {
+                // Set canvas size to match video dimensions
+                const rect = this.video.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.canvas.style.width = rect.width + 'px';
+                this.canvas.style.height = rect.height + 'px';
+            }
+            
+            async loadModel() {
+                try {
+                    this.updateStatus('Loading PoseNet model...');
+                    
+                    // Mobile-optimized configuration
+                    this.net = await posenet.load({
+                        architecture: 'MobileNetV1',
+                        outputStride: 16,
+                        inputResolution: { width: 353, height: 257 }, // Lower resolution for mobile
+                        multiplier: 0.5 // Lighter model for better mobile performance
+                    });
+                    
+                    this.updateStatus('Model loaded! Ready to detect poses.');
+                    this.startDetection();
+                    
+                } catch (error) {
+                    this.updateStatus('Error loading model: ' + error.message);
+                    console.error('Error loading model:', error);
+                }
+            }
+            
+            startDetection() {
+                this.isRunning = true;
+                this.detectPoses();
+            }
+            
+            async detectPoses() {
+                if (!this.isRunning || !this.net) return;
+                
+                try {
+                    const pose = await this.net.estimateSinglePose(this.video, {
+                        flipHorizontal: false, // Don't flip for rear camera
+                        decodingMethod: 'single-person'
+                    });
+                    
+                    this.drawPose(pose);
+                    this.analyzePushUp(pose);
+                    
+                } catch (error) {
+                    console.error('Error detecting pose:', error);
+                }
+                
+                // Throttle frame rate for mobile performance
+                setTimeout(() => {
+                    requestAnimationFrame(() => this.detectPoses());
+                }, 100); // ~10 FPS instead of 60 FPS
+            }
+            
+            drawPose(pose) {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                const minConfidence = this.minConfidence;
+                
+                // Calculate scaling factors for mobile
+                const scaleX = this.canvas.width / this.video.videoWidth;
+                const scaleY = this.canvas.height / this.video.videoHeight;
+                
+                // Draw keypoints
+                pose.keypoints.forEach(keypoint => {
+                    if (keypoint.score >= minConfidence) {
+                        this.ctx.beginPath();
+                        this.ctx.arc(
+                            keypoint.position.x * scaleX, 
+                            keypoint.position.y * scaleY, 
+                            4, 0, 2 * Math.PI
+                        );
+                        this.ctx.fillStyle = '#00ff00';
+                        this.ctx.fill();
+                    }
+                });
+                
+                // Draw skeleton
+                const adjacentKeyPoints = posenet.getAdjacentKeyPoints(pose.keypoints, minConfidence);
+                adjacentKeyPoints.forEach(keypoint => {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(
+                        keypoint[0].position.x * scaleX, 
+                        keypoint[0].position.y * scaleY
+                    );
+                    this.ctx.lineTo(
+                        keypoint[1].position.x * scaleX, 
+                        keypoint[1].position.y * scaleY
+                    );
+                    this.ctx.strokeStyle = '#00ff00';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+                });
+                
+                // Draw calibration line if calibrated
+                if (this.isCalibrated && this.baselineY !== null) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, this.baselineY * scaleY);
+                    this.ctx.lineTo(this.canvas.width, this.baselineY * scaleY);
+                    this.ctx.strokeStyle = '#ff0000';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.stroke();
+                }
+            }
+            
+            analyzePushUp(pose) {
+                // Get key body parts for push-up detection
+                const nose = pose.keypoints.find(kp => kp.part === 'nose');
+                const leftShoulder = pose.keypoints.find(kp => kp.part === 'leftShoulder');
+                const rightShoulder = pose.keypoints.find(kp => kp.part === 'rightShoulder');
+                const leftElbow = pose.keypoints.find(kp => kp.part === 'leftElbow');
+                const rightElbow = pose.keypoints.find(kp => kp.part === 'rightElbow');
+                
+                // Calculate average confidence
+                const avgConfidence = pose.keypoints.reduce((sum, kp) => sum + kp.score, 0) / pose.keypoints.length;
+                document.getElementById('confidence').textContent = Math.round(avgConfidence * 100) + '%';
+                
+                // Check if we have enough confidence in key points
+                if (!nose || !leftShoulder || !rightShoulder || 
+                    nose.score < this.minConfidence || 
+                    leftShoulder.score < this.minConfidence || 
+                    rightShoulder.score < this.minConfidence) {
+                    this.updateStatus('Please position yourself better in the camera view');
+                    return;
+                }
+                
+                // Calculate reference point (average of shoulders and nose)
+                const referenceY = (nose.position.y + leftShoulder.position.y + rightShoulder.position.y) / 3;
+                
+                if (!this.isCalibrated) {
+                    this.updateStatus('Please click "Calibrate" while in starting push-up position (plank)');
+                    return;
+                }
+                
+                // Determine current position based on reference point
+                let currentPosition = 'neutral';
+                const diff = referenceY - this.baselineY;
+                
+                if (diff > this.threshold) {
+                    currentPosition = 'down';
+                } else if (diff < -this.threshold / 2) {
+                    currentPosition = 'up';
+                } else {
+                    currentPosition = 'neutral';
+                }
+                
+                // Add to position history for smoothing
+                this.positionHistory.push(currentPosition);
+                if (this.positionHistory.length > this.historySize) {
+                    this.positionHistory.shift();
+                }
+                
+                // Get most common position in history
+                const positionCounts = this.positionHistory.reduce((counts, pos) => {
+                    counts[pos] = (counts[pos] || 0) + 1;
+                    return counts;
+                }, {});
+                
+                const smoothedPosition = Object.keys(positionCounts).reduce((a, b) => 
+                    positionCounts[a] > positionCounts[b] ? a : b
+                );
+                
+                // Detect push-up cycle
+                if (this.lastPosition === 'up' && smoothedPosition === 'down') {
+                    // Started going down
+                    this.updateStatus('Going down...');
+                } else if (this.lastPosition === 'down' && smoothedPosition === 'up') {
+                    // Completed a push-up
+                    this.pushupCount++;
+                    this.updateStatus('Push-up completed! 🎉');
+                    this.updateDisplay();
+                }
+                
+                this.lastPosition = smoothedPosition;
+                this.updatePositionDisplay(smoothedPosition);
+            }
+            
+            calibrate() {
+                if (!this.net) {
+                    this.updateStatus('Please start the camera first');
+                    return;
+                }
+                
+                // Get current pose to set baseline
+                this.net.estimateSinglePose(this.video, {
+                    flipHorizontal: true,
+                    decodingMethod: 'single-person'
+                }).then(pose => {
+                    const nose = pose.keypoints.find(kp => kp.part === 'nose');
+                    const leftShoulder = pose.keypoints.find(kp => kp.part === 'leftShoulder');
+                    const rightShoulder = pose.keypoints.find(kp => kp.part === 'rightShoulder');
+                    
+                    if (nose && leftShoulder && rightShoulder && 
+                        nose.score >= this.minConfidence && 
+                        leftShoulder.score >= this.minConfidence && 
+                        rightShoulder.score >= this.minConfidence) {
+                        
+                        this.baselineY = (nose.position.y + leftShoulder.position.y + rightShoulder.position.y) / 3;
+                        this.isCalibrated = true;
+                        this.updateStatus('Calibrated! Start doing push-ups.');
+                        
+                    } else {
+                        this.updateStatus('Calibration failed. Please position yourself better.');
+                    }
+                });
+            }
+            
+            resetCounter() {
+                this.pushupCount = 0;
+                this.lastPosition = 'neutral';
+                this.positionHistory = [];
+                this.updateDisplay();
+                this.updateStatus('Counter reset. Ready to count push-ups!');
+            }
+            
+            updateDisplay() {
+                document.getElementById('pushupCount').textContent = this.pushupCount;
+            }
+            
+            updatePositionDisplay(position) {
+                const indicator = document.getElementById('positionIndicator');
+                const currentPos = document.getElementById('currentPosition');
+                
+                currentPos.textContent = position.toUpperCase();
+                
+                indicator.className = 'position-indicator position-' + position;
+                switch(position) {
+                    case 'up':
+                        indicator.textContent = '⬆️ UP - Good form!';
+                        break;
+                    case 'down':
+                        indicator.textContent = '⬇️ DOWN - Push back up!';
+                        break;
+                    default:
+                        indicator.textContent = '➡️ NEUTRAL - Ready position';
+                }
+            }
+            
+            updateStatus(message) {
+                document.getElementById('status').textContent = message;
+            }
+        }
+        
+        // Initialize the push-up counter when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const counter = new PushUpCounter();
+            
+            // Handle orientation changes on mobile
+            window.addEventListener('resize', () => {
+                if (counter.video.srcObject) {
+                    setTimeout(() => {
+                        counter.setupCanvas();
+                    }, 100);
+                }
+            });
+            
+            // Prevent zoom on double tap
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', (event) => {
+                const now = (new Date()).getTime();
+                if (now - lastTouchEnd <= 300) {
+                    event.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, false);
+        });
+    </script>
+</body>
+</html> 
