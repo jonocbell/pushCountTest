@@ -166,6 +166,14 @@
         let baselineNoseY = null;
         let baselineWristY = null;
         let detectionActive = false;
+        
+        // Debouncing variables to prevent double counting
+        let downPositionFrames = 0;
+        let upPositionFrames = 0;
+        let lastCountTime = 0;
+        let minDownFrames = 10;       // Must be down for 10+ frames (~333ms at 30fps)
+        let minUpFrames = 8;          // Must be up for 8+ frames before next count
+        let minTimeBetweenCounts = 1000; // Minimum 1 second between pushup counts
 
         // Keypoint indices for MoveNet
         const KEYPOINTS = {
@@ -321,7 +329,7 @@
 
             if (!detectionActive) return;
 
-            // LOW-ANGLE SIDE VIEW DETECTION:
+            // LOW-ANGLE SIDE VIEW DETECTION with DEBOUNCING:
             // - Down position: nose moves DOWN (closer to ground), wrists move DOWN
             // - Up position: nose moves UP (away from ground), wrists move UP
             // - Look for synchronized movement between nose and wrists
@@ -329,31 +337,57 @@
             const noseMovement = nose.y - baselineNoseY;
             const wristMovement = avgWristY - baselineWristY;
             
-            // Thresholds for movement detection (pixels)
-            const noseDownThreshold = 25;  // Nose moves down 25+ pixels
-            const wristDownThreshold = 30; // Wrists move down 30+ pixels
+            // STRICTER thresholds for movement detection (pixels)
+            const noseDownThreshold = 35;  // Nose moves down 35+ pixels (increased from 25)
+            const wristDownThreshold = 40; // Wrists move down 40+ pixels (increased from 30)
             
             // Down position: both nose and wrists have moved down significantly
             const noseIsDown = noseMovement > noseDownThreshold;
             const wristsAreDown = wristMovement > wristDownThreshold;
-            const isCurrentlyDown = noseIsDown && wristsAreDown;
+            const rawDownPosition = noseIsDown && wristsAreDown;
             
-            // Count pushup on transition from down to up
-            if (isInDownPosition && !isCurrentlyDown) {
+            // DEBOUNCING LOGIC: Require consistent position over multiple frames
+            if (rawDownPosition) {
+                downPositionFrames++;
+                upPositionFrames = 0; // Reset up counter
+            } else {
+                upPositionFrames++;
+                downPositionFrames = 0; // Reset down counter
+            }
+            
+            // Determine stable position state
+            const isCurrentlyDown = downPositionFrames >= minDownFrames;
+            const isCurrentlyUp = upPositionFrames >= minUpFrames;
+            
+            // Check cooldown period
+            const currentTime = Date.now();
+            const timeSinceLastCount = currentTime - lastCountTime;
+            const cooldownPassed = timeSinceLastCount >= minTimeBetweenCounts;
+            
+            // Count pushup ONLY on stable transition from down to up with cooldown
+            if (isInDownPosition && isCurrentlyUp && cooldownPassed) {
                 pushupCount++;
+                lastCountTime = currentTime;
                 document.getElementById('counter').textContent = pushupCount;
                 document.getElementById('status').textContent = `Pushup #${pushupCount} completed!`;
                 
                 // Brief success feedback
                 setTimeout(() => {
-                    document.getElementById('status').textContent = 'Keep going!';
+                    if (detectionActive) {
+                        document.getElementById('status').textContent = 'Keep going!';
+                    }
                 }, 1000);
             }
             
-            isInDownPosition = isCurrentlyDown;
+            // Update position state
+            if (isCurrentlyDown) {
+                isInDownPosition = true;
+            } else if (isCurrentlyUp) {
+                isInDownPosition = false;
+            }
             
-            // Optional: Debug display (comment out for production)
-            // console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down: ${isCurrentlyDown}`);
+            // Optional: Debug display (uncomment for troubleshooting)
+            // console.log(`Nose: ${noseMovement.toFixed(1)}, Wrist: ${wristMovement.toFixed(1)}, Down frames: ${downPositionFrames}, Up frames: ${upPositionFrames}, State: ${isInDownPosition ? 'DOWN' : 'UP'}`);
         }
 
         async function detectPose() {
@@ -386,6 +420,12 @@
             baselineNoseY = null;
             baselineWristY = null;
             detectionActive = false;
+            
+            // Reset debouncing variables
+            downPositionFrames = 0;
+            upPositionFrames = 0;
+            lastCountTime = 0;
+            
             document.getElementById('counter').textContent = '0';
             document.getElementById('status').textContent = 'Get ready to start!';
         }
